@@ -1,0 +1,1 @@
+Take note that finsymbols is source code taken from another github project. I cannot claim credit for that and skillachie (https://github.com/skillachie/finsymbols) deserves recognition for this web scrapping tool for retrieiving S&P500 companies.
