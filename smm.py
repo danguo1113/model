@@ -18,7 +18,7 @@ def retrieveData(start_date, end_date):
             print sym
             curr_df = DataReader(sym, "yahoo", datetime(2000,1,1), datetime(2012,1,1)) 
             sym_dict[sym] = curr_df
-            print sym_dict
+#            print sym_dict
         except IOError:
             print 'I/O Error'
     return sym_dict
