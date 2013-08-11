@@ -7,62 +7,14 @@ import threading
 import mutex
 import Queue
 import sys
+import download_stock_data
 
-sp500_q_lock = threading.Lock()
-sp500_q = Queue.Queue()
-NUM_WORKERS = 16
-
-stock_info_dict_lock = threading.Lock()
-stock_info_dict = {}
 
 START_DATE = datetime(2000,1,1)
 END_DATE = datetime(2013,8,9)
 
-class DownloadThread(threading.Thread):
-    def __init__(self, thread_num):
-        super(DownloadThread, self).__init__()
-        self.thread_num = thread_num
-    def run(self):
-        sys.stdout.write('Thread number ' + str(self.thread_num) + ' reporting for duty!\n') 
-        while True:
-            sym = ''
-            sp500_q_lock.acquire()
-            try:
-                sym = sp500_q.get(False)
-            except Queue.Empty:
-                sp500_q_lock.release()
-                sys.stdout.write('Thread number ' + str(self.thread_num) + ' is finished processing.\n')
-                return
-            sp500_q_lock.release()
-            sys.stdout.write('Thread number ' + str(self.thread_num) + ' is downloading ' + sym + '\n')
-            curr_df = DataFrame()
-            try:
-                curr_df = DataReader(sym, "yahoo", START_DATE, END_DATE)
-            except IOError:
-                sys.stdout.write('Thread number ' + str(self.thread_num) + ' encountered I/O Error while trying to download ' + sym + '\n')
-            stock_info_dict_lock.acquire()
-            stock_info_dict[sym] = curr_df
-            stock_info_dict_lock.release()
-                
-def populate_sp500_q():
-    sp500 = finsymbols.get_sp500_symbols()
-    for co in sp500:
-        sp500_q.put(co['symbol'])
 
-def enlist_workers_to_download():
-    pool = [DownloadThread(i) for i in range(NUM_WORKERS)]
-    for i,thread in enumerate(pool):
-        sys.stdout.write('Starting thread number ' + str(i) + '\n')
-        thread.start()
-    for i,thread in enumerate(pool):
-        thread.join()
-        sys.stdout.write('Joined thread number ' + str(i) + '\n')
-
-def download_stock_data():
-    populate_sp500_q()
-    enlist_workers_to_download()
-
-def play_with_data():
+def play_with_data(stock_info_dict):
     while(True):
         sym = raw_input("Enter symbol: ")
         if not sym:
@@ -87,7 +39,7 @@ def format_date(date_in_str_form):
     date_formatted = date(int(date_split[2]),int(date_split[1]),int(date_split[0]))
     return date_formatted
 
-def sample_the_data():
+def sample_the_data(stock_info_dict):
     while True:
         sym = raw_input("Enter symbol: ")
         if not sym:
@@ -140,7 +92,7 @@ def get_friday_before_if_weekend(time_frame):
     return date_to_return
 
 
-def find_time_stats():
+def find_time_stats(stock_info_dict):
     NUM_OF_TOP_ELEMS = 5
     while True:
         time_frame_str = raw_input("Enter time frame (days) before " + str(END_DATE) + ": ")
@@ -163,10 +115,10 @@ def find_time_stats():
         print_stocks_and_gains(top_n_stks)
                 
 def main():
-    download_stock_data()
-    find_time_stats()
-    #sample_the_data()
-    #play_with_data()
+    stock_info_dict = download_stock_data.download_stock_data()
+    find_time_stats(stock_info_dict)
+    #sample_the_data(stock_info_dict)
+    #play_with_data(stock_info_dict)
     return 0
 
 main()
