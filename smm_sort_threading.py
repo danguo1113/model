@@ -75,7 +75,7 @@ def get_percent_gain(sym,stk_df, start_day_before):
         closing_end = stk_df.ix[str(END_DATE)]['Adj Close']
         return (closing_end - closing_start) / closing_start
     except:
-        print "Exception: No information available for " + sym
+        sys.stdout.write("Exception: No information available for " + sym)
         return 0
 
 def get_friday_before_if_weekend(date_chosen):
@@ -92,77 +92,64 @@ def get_friday_before_if_weekend(date_chosen):
     return date_to_return
 
 
-sp500_q_lock = threading.Lock()
-sp500_q = Queue.Queue()
-NUM_SORTING_WORKERS = 5
+NUM_SORTING_WORKERS = 2
+sorted_lists_array_lock = threading.Lock()
+sorted_lists_array = []
+NUM_SP500_STKS = 500
+NUM_OF_TOP_ELEMS = 5
 
-stock_info_dict_lock = threading.Lock()
-stock_info_dict = {}
-
-START_DATE = datetime(2000,1,1)
-END_DATE = datetime(2013,8,9)
-
-class DownloadThread(threading.Thread):
-    def __init__(self, thread_num):
-        super(DownloadThread, self).__init__()
+class SortingThread(threading.Thread):
+    def __init__(self, thread_num, index_to_start,start_day_before,stock_info_dict):
+        super(SortingThread, self).__init__()
         self.thread_num = thread_num
+        self.index_to_start = index_to_start
+        self.start_day_before = start_day_before
+        self.stock_info_dict = stock_info_dict
+
     def run(self):
-        sys.stdout.write('Thread number ' + str(self.thread_num) + ' reporting for duty!\n')
-        while True:
-            sym = ''
-            sp500_q_lock.acquire()
-            try:
-                sym = sp500_q.get(False)
-            except Queue.Empty:
-                sp500_q_lock.release()
-                sys.stdout.write('Thread number ' + str(self.thread_num) + ' is finished processing.\n')
-                return
-            sp500_q_lock.release()
-            sys.stdout.write('Thread number ' + str(self.thread_num) + ' is downloading ' + sym + '\n')
-            curr_df = DataFrame()
-            try:
-                curr_df = DataReader(sym, "yahoo", START_DATE, END_DATE)
-            except IOError:
-                sys.stdout.write('Thread number ' + str(self.thread_num) + ' encountered I/O Error while trying to download ' + sym + '\n')
-            stock_info_dict_lock.acquire()
-            stock_info_dict[sym] = curr_df
-            stock_info_dict_lock.release()
-
-def populate_sp500_q():
-    sp500 = finsymbols.get_sp500_symbols()
-    for co in sp500:
-        sp500_q.put(co['symbol'])
-
-def enlist_workers_to_download():
-    pool = [DownloadThread(i) for i in range(NUM_WORKERS)]
-    for i,thread in enumerate(pool):
-        sys.stdout.write('Starting thread number ' + str(i) + '\n')
-        thread.start()
-    for i,thread in enumerate(pool):
-        thread.join()
-        sys.stdout.write('Joined thread number ' + str(i) + '\n')
+        step = NUM_SP500_STKS / NUM_SORTING_WORKERS
+        stopping_index = self.index_to_start + step
+        if self.thread_num == NUM_SORTING_WORKERS - 1:
+            stopping_index = NUM_SP500_STKS
+        sub_dict = dict(self.stock_info_dict.items()[self.index_to_start:stopping_index])
+        top_n_stks = []
+        smallest_gainer_of_top = 0 # All stocks could have lost... find one that lost the least
+        for stk in sub_dict:
+            percent_gain = get_percent_gain(stk,self.stock_info_dict[stk],self.start_day_before)
+            if percent_gain >= smallest_gainer_of_top:
+                tuple_to_insert = (stk,percent_gain)
+                index_to_insert = find_first_elem_smaller(top_n_stks, tuple_to_insert)
+                top_n_stks.insert(index_to_insert,tuple_to_insert)
+                top_n_stks = top_n_stks[:NUM_OF_TOP_ELEMS]
+                smallest_gainer_of_top = top_n_stks[len(top_n_stks) - 1][1]
+        sorted_lists_array_lock.acquire()
+        sorted_lists_array.append(top_n_stks)
+        sorted_lists_array_lock.release()
+        
 
 def find_time_stats(stock_info_dict):
-    NUM_OF_TOP_ELEMS = 5
     while True:
         time_frame_str = raw_input("Enter time frame (days) before " + str(END_DATE) + ": ")
         if not time_frame_str:
             break
         time_frame_days = int(time_frame_str)
         start_day_before = get_friday_before_if_weekend(END_DATE - timedelta(time_frame_days))
-        top_n_stks = []
         smallest_gainer_of_top = 0
-        for stk in stock_info_dict:
-            ## Thread
-            percent_gain = get_percent_gain(stk,stock_info_dict[stk],start_day_before)
-            if percent_gain >= smallest_gainer_of_top:
-                tuple_to_insert = (stk,percent_gain)
-                index_to_insert = find_first_elem_smaller(top_n_stks, tuple_to_insert)
-                top_n_stks.insert(index_to_insert,tuple_to_insert)
-                top_n_stks = top_n_stks[0:NUM_OF_TOP_ELEMS]
-                smallest_gainer_of_top = top_n_stks[len(top_n_stks) - 1][1]
-            ## 
-        print_stocks_and_gains(top_n_stks)
+        pool = []
+        global sorted_lists_array
+        sorted_lists_array = []
+        for i in range(NUM_SORTING_WORKERS):
+            index_to_start = NUM_SP500_STKS / NUM_SORTING_WORKERS * i
+            pool.append(SortingThread(i,index_to_start,start_day_before,stock_info_dict))
+        for thr in pool:
+            thr.start()
+        highest_gaining = []
+        for i in range(NUM_SORTING_WORKERS):
+            pool[i].join()
+            highest_gaining += sorted_lists_array[i]
+        highest_gaining_sorted = sorted(highest_gaining, key=lambda elem: elem[1], reverse=True)
+        print_stocks_and_gains(highest_gaining_sorted[:NUM_OF_TOP_ELEMS])
+
                 
 def main():
     stock_info_dict = download_stock_data.download_stock_data()
