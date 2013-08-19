@@ -1,12 +1,19 @@
 from datetime import datetime
-
 from apscheduler.scheduler import Scheduler
+import time
+import logging
 
-sched = Scheduler()
-sched.start()
+logging.basicConfig()
 
 def download_data():
-    ## Download
+    curr_dir = '/Users/danguo/Desktop/model/'
+    file = open(curr_dir + 'output.txt','a')
+    file.write("Downloading\n")
 
 
-sched.add_interval_job(download_data, hours = 24, start_date = '2013-09-12 01:00')
+
+if __name__ == '__main__':
+    sched = Scheduler()
+    sched.daemonic = False
+    sched.start()
+    sched.add_interval_job(download_data, seconds = 2)
